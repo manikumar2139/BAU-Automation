@@ -530,20 +530,59 @@ function ResultsView({
                       className={`size-4 text-muted-foreground mt-1 transition ${isOpen ? "rotate-180" : ""}`}
                     />
                   </button>
-                  {isOpen && (c.evidence || c.detail || c.fix) && (
-                    <div className="px-4 md:px-5 pb-4 pl-12 text-sm space-y-2">
+                  {isOpen && (
+                    <div className="px-4 md:px-5 pb-4 pl-12 text-sm space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <span className="text-xs font-semibold uppercase text-muted-foreground">
+                            Check ID
+                          </span>
+                          <p className="mt-1 font-mono text-xs">{c.id}</p>
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold uppercase text-muted-foreground">
+                            Category
+                          </span>
+                          <p className="mt-1">{c.category}</p>
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold uppercase text-muted-foreground">
+                            Severity
+                          </span>
+                          <p className="mt-1 capitalize">{SEVERITY_LABEL[c.severity]}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold uppercase text-muted-foreground">
+                          Result
+                        </span>
+                        <p className="mt-1">{c.message}</p>
+                      </div>
+                      {c.detail && (
+                        <div>
+                          <span className="text-xs font-semibold uppercase text-muted-foreground">
+                            Details
+                          </span>
+                          <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                            {c.detail}
+                          </p>
+                        </div>
+                      )}
                       {c.evidence && (
                         <div>
-                          <span className="text-xs font-semibold uppercase text-muted-foreground">Evidence</span>
-                          <pre className="mt-1 rounded-md bg-muted px-3 py-2 text-xs whitespace-pre-wrap break-words">
+                          <span className="text-xs font-semibold uppercase text-muted-foreground">
+                            Evidence
+                          </span>
+                          <pre className="mt-1 rounded-md bg-muted px-3 py-2 text-xs whitespace-pre-wrap break-words max-h-72 overflow-auto">
                             {c.evidence}
                           </pre>
                         </div>
                       )}
-                      {c.detail && <p className="text-muted-foreground">{c.detail}</p>}
                       {c.fix && (
                         <div>
-                          <span className="text-xs font-semibold uppercase text-muted-foreground">Suggested fix</span>
+                          <span className="text-xs font-semibold uppercase text-muted-foreground">
+                            Suggested fix
+                          </span>
                           <p className="mt-1">{c.fix}</p>
                         </div>
                       )}

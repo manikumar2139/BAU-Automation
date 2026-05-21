@@ -254,12 +254,19 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
   });
 
   // Heading hierarchy
-  const headings = $("h1,h2,h3,h4,h5,h6")
-    .toArray()
-    .map((el) => parseInt(el.tagName.slice(1), 10));
+  const headingEls = $("h1,h2,h3,h4,h5,h6").toArray();
+  const headings = headingEls.map((el) => parseInt((el as any).tagName.slice(1), 10));
+  const headingList = headingEls.map((el) => {
+    const tag = (el as any).tagName.toUpperCase();
+    return `${tag}: ${$(el).text().trim().slice(0, 120)}`;
+  });
   let hierOk = true;
+  const skips: string[] = [];
   for (let i = 1; i < headings.length; i++) {
-    if (headings[i] - headings[i - 1] > 1) hierOk = false;
+    if (headings[i] - headings[i - 1] > 1) {
+      hierOk = false;
+      skips.push(`H${headings[i - 1]} → H${headings[i]} at "${headingList[i]}"`);
+    }
   }
   add({
     id: "heading-hierarchy",
@@ -267,13 +274,22 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
     category: "Accessibility",
     severity: hierOk ? "pass" : "medium",
     message: hierOk ? "Heading hierarchy is sequential" : "Heading levels skip (e.g. H2 → H4)",
+    evidence: headingList.join("\n"),
+    detail: hierOk
+      ? `Page has ${headings.length} heading(s). Levels increase by at most 1 at a time.`
+      : `Detected ${skips.length} hierarchy skip(s):\n${skips.join("\n")}`,
+    fix: hierOk
+      ? undefined
+      : "Avoid skipping heading levels. Use H2 inside H1 sections, H3 inside H2 sections, etc.",
   });
 
   const h2 = $("h2");
   if (h2.length) {
     const issues: string[] = [];
+    const h2Texts: string[] = [];
     h2.each((_, el) => {
       const t = $(el).text().trim();
+      if (t) h2Texts.push(t);
       if (t.endsWith(".")) issues.push("does not end with a period");
     });
     add({
@@ -284,15 +300,28 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
       message: issues.length
         ? `H2 issues: ${[...new Set(issues)].join(", ")}`
         : `${h2.length} H2 subheading(s) look good`,
+      evidence: h2Texts.map((t, i) => `${i + 1}. ${t}`).join("\n"),
+      detail: `Found ${h2.length} H2 element(s) on the page. Listed in document order.`,
+      fix: issues.length
+        ? "Remove trailing periods from H2 subheadings to keep them concise."
+        : undefined,
     });
   }
 
+  const subHeads: string[] = [];
+  $("h3,h4,h5,h6").each((_, el) => {
+    const tag = (el as any).tagName.toUpperCase();
+    const t = $(el).text().trim();
+    if (t) subHeads.push(`${tag}: ${t}`);
+  });
   add({
     id: "body-subheadings",
     name: "Body Subheadings",
     category: "Content",
     severity: "pass",
     message: `${$("h3,h4,h5,h6").length} sub-headings (H3–H6) found`,
+    evidence: subHeads.join("\n") || "No H3–H6 sub-headings found.",
+    detail: "Sub-headings break content into scannable sections and improve SEO and accessibility.",
   });
 
   // Subhead styling: paragraphs that are entirely bold (heuristic)
