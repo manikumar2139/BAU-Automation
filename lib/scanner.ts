@@ -367,7 +367,7 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
   });
 
   // ---- Links ----
-  const anchors: { href: string; text: string; el: cheerio.AnyNode }[] = [];
+  const anchors: { href: string; text: string; el: any }[] = [];
   $("a[href]").each((_, el) => {
     const href = ($(el).attr("href") || "").trim();
     if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("javascript:"))

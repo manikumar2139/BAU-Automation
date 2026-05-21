@@ -34,7 +34,6 @@ const CATEGORY_OPTIONS: (Category | "All" | "Fail" | "Warn" | "all")[] = [
   "Content",
   "Accessibility",
   "Functionality",
-  "Pass",
   "Info" as never,
   "Links",
   "Technical",
