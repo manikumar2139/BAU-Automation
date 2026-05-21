@@ -939,17 +939,47 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
     const errored = links.filter((l) => l.error).length;
     const redirected = links.filter((l) => l.redirected).length;
 
+    const brokenList = links
+      .filter((l) => !l.ok && l.status !== null)
+      .map((l) => `${l.text || "(no text)"}  →  ${l.url}  [HTTP ${l.status}]`);
+    const erroredList = links
+      .filter((l) => l.error)
+      .map((l) => `${l.text || "(no text)"}  →  ${l.url}  [${l.error}]`);
+    const redirectedList = links
+      .filter((l) => l.redirected)
+      .map((l) => `${l.text || "(no text)"}  →  ${l.url}  [HTTP ${l.status}]`);
+
     // Replace placeholder link-behavior message with real audit
     const lb = checks.find((c) => c.id === "link-behavior")!;
     lb.message = `${links.length} link(s) audited — ${broken} broken, ${redirected} redirected, ${errored} errored`;
     lb.severity = broken === 0 && errored === 0 ? "pass" : "high";
+    lb.detail = `Sampled up to 60 unique link URLs from the body. Each is fetched to verify it returns a 2xx response.`;
+    lb.evidence = `Audited ${links.length} link(s):\n- OK: ${links.length - broken - errored}\n- Broken (4xx/5xx): ${broken}\n- Redirected: ${redirected}\n- Network errors: ${errored}`;
 
     add({
       id: "broken-links",
       name: "Broken Links",
       category: "Links",
-      severity: broken === 0 ? "pass" : "high",
-      message: broken === 0 ? "No broken links detected" : `${broken} broken link(s) detected`,
+      severity: broken === 0 && errored === 0 ? "pass" : "high",
+      message:
+        broken === 0 && errored === 0
+          ? "No broken links detected"
+          : `${broken} broken, ${errored} errored link(s)`,
+      detail:
+        "A link is reported as broken when its HTTP response status is 4xx or 5xx, or when the request fails entirely (DNS/SSL/timeout).",
+      evidence:
+        broken === 0 && errored === 0
+          ? `All ${links.length} sampled link(s) returned 2xx.`
+          : [
+              brokenList.length ? `Broken (${brokenList.length}):\n${brokenList.map((s, i) => `${i + 1}. ${s}`).join("\n")}` : "",
+              erroredList.length ? `Errored (${erroredList.length}):\n${erroredList.map((s, i) => `${i + 1}. ${s}`).join("\n")}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+      fix:
+        brokenList.length || erroredList.length
+          ? "Fix or remove the failing URLs above. For broken external links, contact the destination owner or replace the link."
+          : undefined,
     });
     add({
       id: "redirect-links",
@@ -957,6 +987,13 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
       category: "Links",
       severity: redirected === 0 ? "pass" : "low",
       message: redirected === 0 ? "No redirected links" : `${redirected} link(s) redirect`,
+      detail:
+        "Links that go through one or more HTTP redirects add latency and SEO link-equity loss. Update the href to the final destination URL.",
+      evidence:
+        redirected === 0
+          ? "No redirects detected."
+          : `Redirected links (${redirectedList.length}):\n${redirectedList.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+      fix: redirectedList.length ? "Update each href above to the final URL the redirect points to." : undefined,
     });
   } else {
     add({
@@ -965,6 +1002,7 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
       category: "Links",
       severity: "info",
       message: "Link validation skipped",
+      detail: "Live link validation was disabled for this scan. Enable 'Validate links' in the scan options to check every link's HTTP status.",
     });
     add({
       id: "redirect-links",
@@ -972,6 +1010,7 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
       category: "Links",
       severity: "info",
       message: "Link validation skipped",
+      detail: "Live link validation was disabled for this scan. Enable 'Validate links' in the scan options to detect HTTP redirects.",
     });
   }
 
