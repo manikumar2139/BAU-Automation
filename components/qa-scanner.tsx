@@ -135,8 +135,7 @@ export default function QAScanner() {
         <p className="mt-2 text-muted-foreground text-pretty max-w-2xl">
           Checks UI, links, accessibility, SEO, metadata, content quality, and more across 40+ validations.
           The scan focuses on the page <span className="font-medium text-foreground">body</span> only —
-          shared <code className="font-mono text-xs">{"<header>"}</code>,{" "}
-          <code className="font-mono text-xs">{"<nav>"}</code> and{" "}
+          shared <code className="font-mono text-xs">{"<header>"}</code> and{" "}
           <code className="font-mono text-xs">{"<footer>"}</code> are excluded so developers can QA
           new page content independently.
         </p>
