@@ -382,20 +382,39 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
         : `${boldParaCount} paragraphs appear to be bold-only subheads`,
   });
 
-  // Badge text in ALL CAPS
-  const badgeCandidates = $('[class*="badge" i], [class*="tag" i], [class*="pill" i]');
-  let allCapsBadges = 0;
-  badgeCandidates.each((_, el) => {
+  // Badge / pill / tag text — separate from "eyebrow" check, this targets
+  // smaller pill / tag UI components and verifies they are also UPPERCASE.
+  const pillEls = $('[class*="tag" i], [class*="pill" i], [class*="chip" i]');
+  const pillAll: string[] = [];
+  const pillLower: string[] = [];
+  pillEls.each((_, el) => {
     const t = $(el).text().trim();
-    if (t && t.length >= 2 && t === t.toUpperCase() && /[A-Z]/.test(t)) allCapsBadges++;
+    if (!t) return;
+    const cls = $(el).attr("class") || "";
+    pillAll.push(`"${t}"  [class="${cls}"]`);
+    if (t.length >= 2 && /[a-z]/.test(t) && t !== t.toUpperCase()) {
+      pillLower.push(`"${t}"  [class="${cls}"]`);
+    }
   });
-  if (badgeCandidates.length) {
+  if (pillEls.length) {
     add({
       id: "badge-caps",
-      name: "Badge Text ALL CAPS",
+      name: "Tag / Pill Text ALL CAPS",
       category: "Content",
-      severity: "pass",
-      message: `${allCapsBadges} approved badge(s) found — all in ALL CAPS`,
+      severity: pillLower.length === 0 ? "pass" : "low",
+      message:
+        pillLower.length === 0
+          ? `${pillEls.length} tag/pill(s) — all in ALL CAPS`
+          : `${pillLower.length}/${pillEls.length} tag/pill(s) NOT uppercase`,
+      detail:
+        'Identifies UI tags / pills / chips and verifies they are uppercase. Selector: [class*="tag"], [class*="pill"], [class*="chip"].',
+      evidence:
+        pillLower.length === 0
+          ? `All tag/pill text(s) (${pillEls.length}):\n${pillAll.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+          : `Tag/pill text(s) NOT uppercase (${pillLower.length}):\n${pillLower.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\nAll tag/pill text(s) (${pillEls.length}):\n${pillAll.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+      fix: pillLower.length
+        ? "Convert the tag/pill text(s) above to UPPERCASE or apply text-transform: uppercase."
+        : undefined,
     });
   }
 
@@ -722,14 +741,43 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
     message: lang ? `Language declared: ${lang}` : "Missing lang attribute on <html>",
   });
 
-  // Eyebrow
-  const eyebrow = $('[class*="eyebrow" i]').length;
+  // Eyebrow text — class="badge" elements should be ALL CAPS.
+  // Per spec: "Identify eyebrow text. Validate case. Eyebrow text is uppercase."
+  const eyebrowEls = $('[class*="badge" i], [class*="eyebrow" i]');
+  const eyebrowAll: string[] = [];
+  const eyebrowLower: string[] = [];
+  eyebrowEls.each((_, el) => {
+    const t = $(el).text().trim();
+    if (!t) return;
+    const cls = $(el).attr("class") || "";
+    eyebrowAll.push(`"${t}"  [class="${cls}"]`);
+    if (t.length >= 2 && /[a-z]/.test(t) && t !== t.toUpperCase()) {
+      eyebrowLower.push(`"${t}"  [class="${cls}"]`);
+    }
+  });
   add({
     id: "eyebrow",
-    name: "Eyebrow Text",
+    name: "Verify Eyebrow Text",
     category: "Content",
-    severity: "info",
-    message: eyebrow ? `${eyebrow} eyebrow component(s) detected` : "No eyebrow text component detected.",
+    severity:
+      eyebrowEls.length === 0 ? "info" : eyebrowLower.length === 0 ? "pass" : "low",
+    message:
+      eyebrowEls.length === 0
+        ? "No eyebrow text component detected"
+        : eyebrowLower.length === 0
+          ? `${eyebrowEls.length} eyebrow text(s) — all UPPERCASE`
+          : `${eyebrowLower.length}/${eyebrowEls.length} eyebrow text(s) NOT uppercase`,
+    detail:
+      'Steps:\n1. Identify eyebrow text — selector: [class*="badge"], [class*="eyebrow"].\n2. Validate case — eyebrow text should be UPPERCASE.',
+    evidence:
+      eyebrowEls.length === 0
+        ? 'No elements matched [class*="badge"] or [class*="eyebrow"] in body content.'
+        : eyebrowLower.length === 0
+          ? `All eyebrow text(s) are UPPERCASE (${eyebrowEls.length}):\n${eyebrowAll.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+          : `Eyebrow text(s) NOT uppercase (${eyebrowLower.length}):\n${eyebrowLower.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\nAll eyebrow text(s) (${eyebrowEls.length}):\n${eyebrowAll.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+    fix: eyebrowLower.length
+      ? "Convert the eyebrow text(s) above to UPPERCASE (either change the source text to all caps or apply text-transform: uppercase to the badge styles)."
+      : undefined,
   });
 
   // CTA text
