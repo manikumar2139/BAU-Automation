@@ -455,7 +455,9 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
   // External / internal & target/rel
   let extCount = 0;
   let extNewTab = 0;
-  let extMissingRel = 0;
+  const extNotNewTab: string[] = [];
+  const extMissingRelList: string[] = [];
+  const intNewTabList: string[] = [];
   let intSameTabCount = 0;
   let intTotal = 0;
   for (const a of anchors) {
@@ -468,13 +470,28 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
     const isExt = abs.host !== baseHost;
     const target = $(a.el).attr("target");
     const rel = ($(a.el).attr("rel") || "").toLowerCase();
+    const label = a.text.trim().replace(/\s+/g, " ").slice(0, 80) || "(no text)";
+    const line = `${label}  →  ${abs.href}`;
     if (isExt) {
       extCount++;
-      if (target === "_blank") extNewTab++;
-      if (!rel.includes("noopener") || !rel.includes("noreferrer")) extMissingRel++;
+      if (target === "_blank") {
+        extNewTab++;
+      } else {
+        extNotNewTab.push(`${line}  [target="${target ?? "(missing)"}"]`);
+      }
+      if (!rel.includes("noopener") || !rel.includes("noreferrer")) {
+        const missing: string[] = [];
+        if (!rel.includes("noopener")) missing.push("noopener");
+        if (!rel.includes("noreferrer")) missing.push("noreferrer");
+        extMissingRelList.push(`${line}  [rel="${rel || "(missing)"}" — missing: ${missing.join(", ")}]`);
+      }
     } else {
       intTotal++;
-      if (target !== "_blank") intSameTabCount++;
+      if (target !== "_blank") {
+        intSameTabCount++;
+      } else {
+        intNewTabList.push(`${line}  [target="_blank"]`);
+      }
     }
   }
   add({
@@ -482,7 +499,13 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
     name: "Link Behavior Audit",
     category: "Links",
     severity: "pass",
-    message: `${anchors.length} link(s) audited — all targets correct and healthy`,
+    message: `${anchors.length} link(s) audited — ${intTotal} internal, ${extCount} external`,
+    detail:
+      "Audits every <a> on the body for href, target, and rel attributes. Internal vs external is determined by comparing the link host to the page host.",
+    evidence:
+      anchors.length === 0
+        ? "No links found in body content."
+        : `${anchors.length} total links\n- Internal: ${intTotal}\n- External: ${extCount}\n- PDFs: ${anchors.filter((x) => /\.pdf(\?|$)/i.test(x.href)).length}`,
   });
   add({
     id: "external-new-tab",
@@ -492,7 +515,16 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
     message:
       extCount === 0
         ? "No external links"
-        : `${extNewTab} external links — ${extNewTab === extCount ? "all open in new tab" : `${extCount - extNewTab} not opening in new tab`}`,
+        : `${extNewTab}/${extCount} external links open in a new tab`,
+    detail:
+      'External links should typically include target="_blank" so users do not lose their place on the current site.',
+    evidence:
+      extCount === 0
+        ? "No external links to audit."
+        : extNotNewTab.length === 0
+          ? "All external links use target=\"_blank\"."
+          : `External links NOT opening in a new tab (${extNotNewTab.length}):\n${extNotNewTab.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+    fix: extNotNewTab.length ? 'Add target="_blank" rel="noopener noreferrer" to the external links above.' : undefined,
   });
   add({
     id: "internal-same-tab",
@@ -503,37 +535,87 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
       intTotal === 0
         ? "No internal links"
         : `${intSameTabCount}/${intTotal} internal links open in same tab`,
+    detail:
+      'Internal links should NOT use target="_blank". Forcing new tabs for same-site navigation breaks browser back-button behavior and accessibility expectations.',
+    evidence:
+      intTotal === 0
+        ? "No internal links to audit."
+        : intNewTabList.length === 0
+          ? "All internal links open in the same tab."
+          : `Internal links opening in a NEW tab (${intNewTabList.length}):\n${intNewTabList.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+    fix: intNewTabList.length ? 'Remove target="_blank" from the internal links above so they open in the same tab.' : undefined,
   });
   add({
     id: "ext-rel-security",
     name: "External Link Security (rel)",
     category: "Technical",
-    severity: extMissingRel === 0 ? "pass" : "medium",
+    severity: extMissingRelList.length === 0 ? "pass" : "medium",
     message:
-      extMissingRel === 0
-        ? "External links use rel=\"noopener noreferrer\""
-        : `${extMissingRel} external links missing rel="noopener noreferrer"`,
+      extMissingRelList.length === 0
+        ? extCount === 0
+          ? "No external links to audit"
+          : 'External links use rel="noopener noreferrer"'
+        : `${extMissingRelList.length} external link(s) missing rel attributes`,
+    detail:
+      'Every external link should include rel="noopener noreferrer" to prevent the new page from accessing window.opener (tabnabbing) and to strip the Referer header.',
+    evidence:
+      extMissingRelList.length === 0
+        ? extCount === 0
+          ? "No external links present."
+          : 'All external links include both noopener and noreferrer.'
+        : `External links missing rel attributes (${extMissingRelList.length}):\n${extMissingRelList.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+    fix: extMissingRelList.length ? 'Add rel="noopener noreferrer" to each external link listed above.' : undefined,
   });
 
   // PDFs
   const pdfs = anchors.filter((a) => /\.pdf(\?|$)/i.test(a.href));
+  const pdfNotNewTab: string[] = [];
+  const pdfList: string[] = [];
+  const pdfOutsideGated: string[] = [];
+  for (const p of pdfs) {
+    const target = $(p.el).attr("target");
+    const label = (p.text.trim().replace(/\s+/g, " ").slice(0, 80) || "(no text)") + "  →  " + p.href;
+    pdfList.push(label + (target === "_blank" ? "  [target=\"_blank\"]" : `  [target="${target ?? "(missing)"}"]`));
+    if (target !== "_blank") pdfNotNewTab.push(label);
+    if (!/\/gated\//i.test(p.href)) pdfOutsideGated.push(label);
+  }
   add({
     id: "pdf-new-tab",
     name: "PDFs Open in New Tab",
     category: "Functionality",
-    severity: "pass",
+    severity: pdfs.length === 0 || pdfNotNewTab.length === 0 ? "pass" : "low",
     message: pdfs.length
-      ? `${pdfs.length} PDF link(s) — all open in new tab`
+      ? pdfNotNewTab.length === 0
+        ? `${pdfs.length} PDF link(s) — all open in new tab`
+        : `${pdfs.length - pdfNotNewTab.length}/${pdfs.length} PDFs open in new tab`
       : "No PDF links found",
+    detail: "PDF links should open in a new tab so users do not lose the page they were on.",
+    evidence:
+      pdfs.length === 0
+        ? "No PDF links present in body content."
+        : pdfNotNewTab.length === 0
+          ? `All ${pdfs.length} PDF link(s):\n${pdfList.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+          : `PDFs NOT opening in a new tab (${pdfNotNewTab.length}):\n${pdfNotNewTab.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\nAll PDFs:\n${pdfList.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+    fix: pdfNotNewTab.length ? 'Add target="_blank" rel="noopener noreferrer" to the PDF anchors above.' : undefined,
   });
   add({
     id: "pdf-secure",
     name: "Secure PDFs Under /gated/",
     category: "Technical",
-    severity: "pass",
+    severity: "info",
     message: pdfs.length
-      ? `${pdfs.length} PDF(s) reviewed — no confidential PDFs outside /gated/ detected`
+      ? pdfOutsideGated.length === 0
+        ? `${pdfs.length} PDF(s) — all under /gated/`
+        : `${pdfOutsideGated.length}/${pdfs.length} PDF(s) outside /gated/`
       : "No PDFs to review",
+    detail:
+      "Confidential or gated PDFs should live under a /gated/ path so they can be access-controlled. Public marketing PDFs are typically fine outside /gated/.",
+    evidence:
+      pdfs.length === 0
+        ? "No PDFs found."
+        : pdfOutsideGated.length === 0
+          ? "All PDFs are under /gated/."
+          : `PDFs outside /gated/ (${pdfOutsideGated.length}):\n${pdfOutsideGated.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
   });
 
   // ---- Images / alt ----
