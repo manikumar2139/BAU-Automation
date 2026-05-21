@@ -104,8 +104,42 @@ export async function scanPage(opts: ScanOptions): Promise<ScanResult> {
   const finalUrl = res.url || opts.url;
   const baseHost = new URL(finalUrl).host;
 
+  // ---- Scope to BODY content only ----
+  // Header, primary navigation and footer are typically shared across all pages
+  // of the site, so we strip them before running content / accessibility / link
+  // / image checks. <head> metadata (title, meta, canonical, OG, Twitter, etc.)
+  // is not affected because it lives in <head>, not <header>.
+  const excluded = {
+    header: $("header, [role='banner']").length,
+    nav: $("nav, [role='navigation']").length,
+    footer: $("footer, [role='contentinfo']").length,
+  };
+  $("header, [role='banner']").remove();
+  $("footer, [role='contentinfo']").remove();
+  $("nav, [role='navigation']").remove();
+
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
+
+  // ---- Scope notice ----
+  const excludedParts: string[] = [];
+  if (excluded.header) excludedParts.push(`${excluded.header} <header>`);
+  if (excluded.nav) excludedParts.push(`${excluded.nav} <nav>`);
+  if (excluded.footer) excludedParts.push(`${excluded.footer} <footer>`);
+  add({
+    id: "scan-scope",
+    name: "Scan Scope",
+    category: "Technical",
+    severity: "info",
+    message: excludedParts.length
+      ? `Body-only scan — excluded ${excludedParts.join(", ")}`
+      : "Body-only scan — no header/nav/footer detected",
+    detail:
+      "Header, primary navigation, and footer are shared across pages and are not part of the page body, so they are excluded from content, link, image, heading, and accessibility checks. <head> metadata (title, meta tags, canonical, Open Graph, Twitter, etc.) is still evaluated because it lives in <head>, not <header>.",
+    evidence: excludedParts.length
+      ? `Excluded selectors:\n- header, [role="banner"]\n- nav, [role="navigation"]\n- footer, [role="contentinfo"]\n\nMatched on this page: ${excludedParts.join(", ")}`
+      : 'Selectors checked but not found:\n- header, [role="banner"]\n- nav, [role="navigation"]\n- footer, [role="contentinfo"]',
+  });
 
   // ---- SEO / Metadata ----
   const title = $("head > title").first().text().trim();
